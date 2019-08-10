@@ -1,0 +1,4 @@
+#Tue Jul 23 00:12:51 CEST 2019
+base.0=C\:\\Users\\Snow\\Desktop\\ariblab\\projects\\app\\fstore2\\build\\app\\intermediates\\transforms\\dexMerger\\debug\\0
+path.0=classes.dex
+renamed.0=classes.dex

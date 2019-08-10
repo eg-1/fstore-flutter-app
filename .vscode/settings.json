@@ -1,0 +1,9 @@
+{
+    "flutter-files.menu.model": true,
+    "flutter-files.menu.provider": true,
+    "flutter-files.menu.repository": true,
+    "dart.previewFlutterOutline": true,
+    "dart.previewFlutterStructuredErrors": true,
+    "dart.previewFlutterUiGuides": true,
+    "dart.previewFlutterUiGuidesCustomTracking": true
+}
