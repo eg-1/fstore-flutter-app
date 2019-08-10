@@ -1,0 +1,650 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:screen/screen.dart';
+import 'package:flutter/material.dart';
+import 'package:fstore2/tab_pages.dart' as pages;
+//import 'package:flutter_inappbrowser/flutter_inappbrowser.dart';
+import 'package:http/http.dart' as http;
+import 'package:webview_flutter/webview_flutter.dart';
+//import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_offline/flutter_offline.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/foundation.dart';
+
+class Cate {
+  final String id;
+  final String name;
+  final String img;
+
+  Cate({this.id, this.img, this.name});
+
+  factory Cate.fromJson(Map<String, dynamic> json) {
+    return new Cate(
+      id: json['id'].toString(),
+      name: json['name'],
+      img: json['img'],
+    );
+  }
+}
+
+class CatesList {
+  final List<Cate> cates;
+
+  CatesList({
+    this.cates,
+  });
+  factory CatesList.fromJson(List<dynamic> parsedJson) {
+    List<Cate> cates = parsedJson.map((i) => Cate.fromJson(i)).toList();
+
+    return new CatesList(
+      cates: cates,
+    );
+  }
+}
+
+class Product {
+  final int id;
+  final String name;
+  final String details;
+  final String img;
+  final String price;
+
+  Product({this.id, this.name, this.details, this.img, this.price});
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return new Product(
+      id: json['id'] * 1,
+      name: json['name'],
+      details: json['details'],
+      price: json['price'],
+      img: json['img'],
+    );
+  }
+}
+
+//Future keepScreenOn() async {
+//  Screen.keepOn(true);
+//}
+void main() => runApp(MyApp());
+
+class MyApp extends StatelessWidget {
+  // This widget is the root of your application.
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'المتجر',
+      locale: Locale('ar', ''),
+      localizationsDelegates: [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      supportedLocales: [
+        const Locale('ar', ''), // Arabic
+      ],
+      theme: ThemeData(
+        primarySwatch: Colors.green,
+      ),
+      initialRoute: '/',
+      routes: {
+        // When navigating to the "/" route, build the FirstScreen widget.
+        '/': (context) => MyHomePage(title: 'المتجر'),
+        // When navigating to the "/second" route, build the SecondScreen widget.
+        '/product': (context) => ProductPage(),
+      },
+    );
+  }
+}
+
+class MyHomePage extends StatefulWidget {
+  MyHomePage({Key key, this.title}) : super(key: key);
+
+  // This widget is the home page of your application. It is stateful, meaning
+  // that it has a State object (defined below) that contains fields that affect
+  // how it looks.
+
+  // This class is the configuration for the state. It holds the values (in this
+  // case the title) provided by the parent (in this case the App widget) and
+  // used by the build method of the State. Fields in a Widget subclass are
+  // always marked "final".
+
+  final String title;
+
+  @override
+  _MyHomePageState createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  bool _isLoading = true;
+  bool _isKeptOn = false;
+  double _brightness = 1.0;
+  int _selectedIndex = 0;
+  String _selectedCate = "0";
+  Widget catesList, _store;
+
+  var _allCates ="[]",_allCatesProducts="{}";
+  static const TextStyle optionStyle =
+      TextStyle(fontSize: 30, fontWeight: FontWeight.bold);
+
+  WebViewController _webViewController;
+
+  void _onItemTapped(int index) {
+    _isLoading = true;
+    if (index == 2) {
+      _webViewController.loadUrl("https://fstore.eg-1.com/app/orders?m=1");
+    } else if (index == 3) {
+      _webViewController.loadUrl("https://fstore.eg-1.com/settings?m=1");
+    }
+
+    _goTo(index);
+  }
+
+  @override
+  initState() {
+    super.initState();
+    Screen.keepOn(true);
+  }
+
+  _getWidget() {
+    return Container(
+      child: Stack(
+        children: <Widget>[
+          Visibility(
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              visible: _selectedIndex == 0 && !_isLoading,
+              child: catesList),
+          Visibility(
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              visible: _isLoading,
+              child: Center(child: CircularProgressIndicator())),
+          Visibility(
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              visible: _selectedIndex == 1 && !_isLoading,
+              child: _store),
+          Visibility(
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            visible: _selectedIndex >= 2 && !_isLoading,
+            child: WebView(
+              initialUrl: 'https://fstore.eg-1.com/app/store',
+              javascriptMode: JavascriptMode.unrestricted,
+              onWebViewCreated: (WebViewController webViewController) {
+                setState(() {
+                  _webViewController = webViewController;
+                  _isLoading = true;
+                });
+              },
+              onPageFinished: (c_url) {
+                var _go_url = "";
+                if (!c_url.contains('m=1')) {
+                  if (!c_url.contains('?')) {
+                    _go_url = "?";
+                  }
+                  _webViewController.loadUrl("$c_url$_go_url" + "m=1");
+                }
+
+                setState(() {
+                  if (c_url.contains('/settings')) {
+                    _selectedIndex = 3;
+                  }  
+                  if (c_url.contains('/cart')) {
+                    _selectedIndex = 2;
+                  }
+                  _isLoading = false;
+                });
+              },
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    catesList = FutureBuilder(
+        future: _getDataCates() ?? "[]",
+        builder: (context, snapshot) {
+          switch (snapshot.connectionState) {
+            case ConnectionState.none:
+              return Text('!!!');
+            case ConnectionState.waiting:
+              return Center(child: CircularProgressIndicator());
+            case ConnectionState.active:
+              return Text('');
+            case ConnectionState.done:
+              if (snapshot.hasError) {
+                return Text(
+                  'خطأ غير متوقع',
+                  style: TextStyle(color: Colors.red),
+                );
+              }
+          }
+          if (snapshot.connectionState == ConnectionState.done &&
+              snapshot.hasError) {
+            return Text(
+              'خطأ غير متوقع',
+              style: TextStyle(color: Colors.red),
+            );
+          }
+          return Stack(
+            children: [
+              snapshot.connectionState == ConnectionState.done
+                  ? AnimatedOpacity(
+                      opacity: snapshot.connectionState == ConnectionState.done
+                          ? 1.0
+                          : 0.0,
+                      duration: Duration(milliseconds: 500),
+                      child: GridView.builder(
+                        itemCount: json.decode(snapshot.data).length,
+                        gridDelegate:
+                            new SliverGridDelegateWithFixedCrossAxisCount(
+                                childAspectRatio: 5 / 7,
+                                crossAxisCount:
+                                    (MediaQuery.of(context).size.width >
+                                            MediaQuery.of(context).size.height
+                                        ? 5
+                                        : 3)),
+                        itemBuilder: (BuildContext context, int index) {
+                          return Column(
+                            children: <Widget>[
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedIndex = 1;
+                                    _selectedCate = json
+                                        .decode(snapshot.data)[index]['id']
+                                        .toString();
+                                    //_getProductsByCateID(json.decode(snapshot.data)[index]['id'].toString());
+                                  });
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.all(15.0),
+                                  padding: const EdgeInsets.all(3.0),
+                                  decoration: new BoxDecoration(
+                                    borderRadius: new BorderRadius.all(
+                                        Radius.circular(4.0)),
+                                    border: new Border.all(
+                                        color: Colors.green, width: 2.0),
+                                  ),
+                                  child: Image.network(
+                                    'https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&resize_h=200&url=https://fstore.eg-1.com/uploads/images/' +
+                                        json.decode(snapshot.data)[index]
+                                            ['img'],
+                                    fit: BoxFit.cover,
+                                    height: 80,
+                                    width: 80,
+                                  ),
+                                ),
+                              ),
+                              Text(json.decode(snapshot.data)[index]['name']),
+                            ],
+                          );
+                        },
+                      ),
+                    )
+                  : Text("")
+            ],
+          );
+        });
+    _store = FutureBuilder(
+        initialData: "[]",
+        future: (_getDataStore().toString().contains("html")?_noData():_getDataStore()) ?? _noData(),
+                builder: (context, snapshot) {
+                  switch (snapshot.connectionState) {
+                    case ConnectionState.none:
+                      return Text('!!!');
+                    case ConnectionState.waiting:
+                      return Center(child: CircularProgressIndicator());
+                    case ConnectionState.active:
+                      return Text('');
+                    case ConnectionState.done:
+                      if (snapshot.hasError) {
+                        return Text(
+                          'خطأ غير متوقع',
+                          style: TextStyle(color: Colors.red),
+                        );
+                      }
+                  }
+                  debugPrint("json.decode(snapshot.data).length");
+                  debugPrint(json.decode(snapshot.data).length.toString());
+                  if (json.decode(snapshot.data).length == 0) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: <Widget>[
+                          Icon(Icons.sentiment_very_dissatisfied, size: 45.0),
+                          Text(
+                            "لا توجد بيانات",
+                            style: TextStyle(color: Colors.black, fontSize: 18.0),
+                          ),
+                          Text(
+                            "لمزيد من المعلومات يرجى مراسلة الإدارة",
+                            style: TextStyle(color: Colors.black54, fontSize: 14.0),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  if (snapshot.connectionState == ConnectionState.done &&
+                      snapshot.hasError) {
+                    return Text(
+                      'خطأ غير متوقع',
+                      style: TextStyle(color: Colors.red),
+                    );
+                  }
+                  return Stack(
+                    children: [
+                      snapshot.connectionState == ConnectionState.done
+                          ? AnimatedOpacity(
+                              opacity: snapshot.connectionState == ConnectionState.done
+                                  ? 1.0
+                                  : 1.0,
+                              duration: Duration(milliseconds: 500),
+                              child: GridView.builder(
+                                itemCount: json.decode(snapshot.data).length,
+                                gridDelegate:
+                                    new SliverGridDelegateWithFixedCrossAxisCount(
+                                        childAspectRatio: 9 / 13.5,
+                                        crossAxisCount:
+                                            (MediaQuery.of(context).size.width >
+                                                    MediaQuery.of(context).size.height
+                                                ? 4
+                                                : 2)),
+                                itemBuilder: (BuildContext context, int index) {
+                                  return InkWell(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                            builder: (context) => ProductPage(
+                                                    product: Product(
+                                                  id: json.decode(snapshot.data)[index]
+                                                          ["id"] *
+                                                      1,
+                                                  name: json
+                                                      .decode(snapshot.data)[index]
+                                                          ["name"]
+                                                      .toString(),
+                                                  details: json
+                                                      .decode(snapshot.data)[index]
+                                                          ["details"]
+                                                      .toString(),
+                                                  img: json
+                                                      .decode(snapshot.data)[index]
+                                                          ["img"]
+                                                      .toString(),
+                                                ))),
+                                      );
+                                    },
+                                    child: Container(
+                                      margin: const EdgeInsets.all(0.0),
+                                      padding: const EdgeInsets.all(0.0),
+                                      decoration: new BoxDecoration(
+                                        border: new Border.all(
+                                            color: Colors.black12, width: 0.5),
+                                      ),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(20.0),
+                                        child: Column(
+                                          children: <Widget>[
+                                            Image.network(
+                                              'https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&resize_h=200&url=https://fstore.eg-1.com/uploads/images/' +
+                                                  json.decode(snapshot.data)[index]
+                                                      ['img'],
+                                              fit: BoxFit.cover,
+                                              height: (MediaQuery.of(context)
+                                                          .size
+                                                          .width >
+                                                      MediaQuery.of(context).size.height
+                                                  ? 160
+                                                  : 200),
+                                              width: 150,
+                                            ),
+                                            RichText(
+                                              text: TextSpan(children: <TextSpan>[
+                                                TextSpan(
+                                                    text: json.decode(
+                                                        snapshot.data)[index]['name'],
+                                                    style: TextStyle(
+                                                        color: Colors.black,
+                                                        fontWeight: FontWeight.bold)),
+                                              ]),
+                                              //child: Text(json.decode(snapshot.data)[index]['name'])),
+                                            )
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            )
+                          : Text("")
+                    ],
+                  );
+                });
+            return OfflineBuilder(
+              connectivityBuilder: (
+                BuildContext context,
+                ConnectivityResult connectivity,
+                Widget child,
+              ) {
+                final bool connected = connectivity != ConnectivityResult.none;
+                return new Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Scaffold(
+                      appBar: AppBar(
+                        backgroundColor: connected ? Colors.green : Colors.red,
+                        title: Row(
+                          children: <Widget>[
+                            Text("المتجر ${connected ? '' : ' - بدون إنترنت'}"),
+                          ],
+                        ),
+                        actions: <Widget>[
+                          IconButton(
+                            icon: Icon(Icons.shopping_basket),
+                            onPressed: () {
+                                                    _webViewController
+                              .evaluateJavascript('window.order({"id":16,"name":"المنتج 16","price":140,"cate_id":4,"img":"IMAGE1562014516.jpg","details":"منتج ذو جودة عالية","created_at":"2019-07-17 13:01:28","updated_at":"2019-07-17 13:01:28","quantity":1});');
+        
+                              _webViewController
+                                  .loadUrl("https://fstore.eg-1.com/app/cart");
+                              //_webViewController.evaluateJavascript("document.body.remove();");
+                              _goTo(2);
+                            },
+                          )
+                        ],
+                      ),
+                      body: connected
+                          ? Stack(
+                              children: <Widget>[
+                                _getWidget(),
+                                //!_isLoading
+                                //    ? Center(child: new CircularProgressIndicator())
+                                //    : _getWidget(),
+                                //AnimatedOpacity(
+                                //  opacity:
+                                //      _isLoading ? 0.0 : 1.0,
+                                //  duration: Duration(milliseconds: 500),
+                                //  child: _getWidget(),
+                                //)
+                              ],
+                            )
+                          : Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: <Widget>[
+                                  Icon(Icons.signal_wifi_off, size: 45.0),
+                                  Text(
+                                    "الوصول إلى الإنترنت ضروري",
+                                    style:
+                                        TextStyle(color: Colors.black, fontSize: 18.0),
+                                  ),
+                                  Text(
+                                    "يرجى توصيل الإنترنت",
+                                    style: TextStyle(
+                                        color: Colors.black54, fontSize: 14.0),
+                                  ),
+                                ],
+                              ),
+                            ),
+                      bottomNavigationBar: connected
+                          ? BottomNavigationBar(
+                              currentIndex: _selectedIndex,
+                              items: const <BottomNavigationBarItem>[
+                                BottomNavigationBarItem(
+                                  icon: Icon(Icons.category),
+                                  title: Text('الفئات'),
+                                ),
+                                BottomNavigationBarItem(
+                                  icon: Icon(Icons.store),
+                                  title: Text('تسوق'),
+                                ),
+                                BottomNavigationBarItem(
+                                  icon: Icon(Icons.shopping_cart),
+                                  title: Text('الطلبات'),
+                                ),
+                                BottomNavigationBarItem(
+                                  icon: Icon(Icons.person),
+                                  title: Text('الحساب'),
+                                ),
+                                BottomNavigationBarItem(
+                                  icon: Icon(Icons.info),
+                                  title: Text('من نحن'),
+                                ),
+                              ],
+                              selectedItemColor: Colors.green,
+                              unselectedItemColor: Colors.black,
+                              showUnselectedLabels: true,
+                              onTap: _onItemTapped,
+                            )
+                          : Text(""),
+                    ),
+                  ],
+                );
+              },
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  new Text(
+                    'There are no bottons to push :)',
+                  ),
+                  new Text(
+                    'Just turn off your internet.',
+                  ),
+                ],
+              ),
+            );
+          }
+        
+          Future _getDataStore() async {
+            setState(() {
+              _isLoading = false;
+            });
+            try {
+              return await http
+                  .post("https://fstore.eg-1.com/api/v1/$_selectedCate/products")
+                  .then((response){
+                    print("(((((((((((((((((((((object)))))))))))))))))))))");
+                    print(_getDataStore().toString().contains("html"));
+                    return response.body ?? "[]";}).catchError((response) => "[]");
+            } catch (e) {
+              return "[]";
+            }
+          }
+        
+          Future _getDataCates() async {
+            setState(() {
+              _isLoading = false;
+            });
+            try {
+              return await http
+                  .post("https://fstore.eg-1.com/api/v1/cates")
+                  .then((response) => response.body ?? "[]").catchError((response) => "[]");
+            } catch (e) {
+              return "[]";
+            }
+          }
+        
+          Future _goTo(index) async {
+            setState(() {
+              _selectedIndex = index;
+              _isLoading = true;
+            });
+          }
+        
+          Future _noData() async {
+            return "[]";
+          }
+}
+
+class ProductPage extends StatelessWidget {
+  // Declare a field that holds the Todo.
+  final Product product;
+
+  // In the constructor, require a Todo.
+  ProductPage({Key key, @required this.product}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: NestedScrollView(
+        headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+          return <Widget>[
+            SliverAppBar(
+              expandedHeight: 200.0,
+              floating: false,
+              pinned: true,
+              flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: true,
+                  title: Text(product.name,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18.0,
+                        shadows: <Shadow>[
+                          Shadow(
+                            offset: Offset(0.0, 1.0),
+                            blurRadius: 3.0,
+                            color: Color.fromARGB(255, 0, 0, 0),
+                          ),
+                        ],
+                      )),
+                  background: Opacity(
+                    opacity: 0.8,
+                    child: Image.network(
+                      'https://images1-focus-opensocial.googleusercontent.com/gadgets/proxy?container=focus&resize_h=200&url=https://fstore.eg-1.com/uploads/images/' + product.img,
+                      fit: BoxFit.cover,
+                    ),
+                  )),
+            ),
+          ];
+        },
+        body: Center(
+          child: Column(
+            children: <Widget>[
+              Text(product.details),
+              OutlineButton(
+                onPressed: () {
+                  _MyHomePageState()
+                      ._webViewController
+                      .evaluateJavascript('window.order({"id":${product.id},"name":"${product.name}","price":${product.price},"quantity":1});');
+                },
+                child: Text("أظفه لسلةا لمشتريات"),
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
